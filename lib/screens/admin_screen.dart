@@ -31,19 +31,72 @@ class _AdminScreenState extends State<AdminScreen> {
       });
     } catch (e) {
       print("Error loading users: $e");
-      setState(() {
-        _isLoading = false;
-      });
+      setState(() => _isLoading = false);
     }
+  }
+
+  double _calculateTotalBalance() {
+    return _users.fold(0, (sum, user) => sum + (user['balance'] ?? 0));
   }
 
   Future<void> _logout() async {
     SharedPreferences prefs = await SharedPreferences.getInstance();
-    await prefs.clear(); // Clear saved login details
+    await prefs.clear();
     Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(builder: (context) => LoginScreen()),
-      (route) => false, // Removes all previous routes (prevents going back)
+      (route) => false,
+    );
+  }
+
+  void _showAddUserDialog() {
+    TextEditingController nameController = TextEditingController();
+    TextEditingController emailController = TextEditingController();
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Add New User'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(labelText: "Name"),
+              ),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(labelText: "Email"),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                String name = nameController.text.trim();
+                String email = emailController.text.trim();
+                if (name.isNotEmpty && email.isNotEmpty) {
+                  String password = '123456';
+                  String hashedPassword =
+                      sha256.convert(utf8.encode(password)).toString();
+
+                  await MongoService()
+                      .addUser(name, email, hashedPassword, 'user');
+
+                  Navigator.of(ctx).pop();
+                  _loadUsers();
+                }
+              },
+              child: const Text('Add'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
     );
   }
 
@@ -66,16 +119,10 @@ class _AdminScreenState extends State<AdminScreen> {
                 if (isAdd) {
                   await MongoService().addMoney(email, amount);
                 } else {
-                  try {
-                    await MongoService().cashOut(email, amount);
-                  } catch (e) {
-                    ScaffoldMessenger.of(context).showSnackBar(
-                      SnackBar(content: Text(e.toString())),
-                    );
-                  }
+                  await MongoService().cashOut(email, amount);
                 }
                 Navigator.of(ctx).pop();
-                _loadUsers(); // Refresh the list after update
+                _loadUsers();
               }
             },
             child: const Text('Submit'),
@@ -120,60 +167,31 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
-  void _showAddUserDialog(BuildContext context) {
-    TextEditingController nameController = TextEditingController();
-    TextEditingController emailController = TextEditingController();
-    String selectedRole = 'user'; // Default role, but not shown in UI
-
-    showDialog(
+  Future<bool?> _confirmDeleteUser(
+      BuildContext context, Map<String, dynamic> user) async {
+    return await showDialog<bool>(
       context: context,
-      builder: (ctx) {
-        return AlertDialog(
-          title: const Text('Add New User'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameController,
-                decoration: const InputDecoration(hintText: "Enter name"),
-              ),
-              TextField(
-                controller: emailController,
-                decoration: const InputDecoration(hintText: "Enter email"),
-              ),
-            ],
+      builder: (ctx) => AlertDialog(
+        title: const Text('Delete User'),
+        content: Text('Are you sure you want to delete ${user['name']}?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Cancel'),
           ),
-          actions: [
-            TextButton(
-              onPressed: () async {
-                String name = nameController.text.trim();
-                String email = emailController.text.trim();
-                if (name.isNotEmpty && email.isNotEmpty) {
-                  String password = '123456';
-                  String hashedPassword =
-                      sha256.convert(utf8.encode(password)).toString();
-
-                  await MongoService()
-                      .addUser(name, email, hashedPassword, selectedRole);
-
-                  Navigator.of(ctx).pop();
-                  _loadUsers();
-                }
-              },
-              child: const Text('Add'),
-            ),
-            TextButton(
-              onPressed: () => Navigator.of(ctx).pop(),
-              child: const Text('Cancel'),
-            ),
-          ],
-        );
-      },
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Delete', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
     );
   }
 
   @override
   Widget build(BuildContext context) {
+    double totalBalance = _calculateTotalBalance();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Admin Panel'),
@@ -186,50 +204,140 @@ class _AdminScreenState extends State<AdminScreen> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadUsers,
-              child: ListView.builder(
-                itemCount: _users.length,
-                itemBuilder: (ctx, index) {
-                  var user = _users[index];
-                  return Card(
-                    margin:
-                        const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    child: ListTile(
-                      title: Text(user['name'] ?? ''),
-                      subtitle: Text(
-                          "Email: ${user['email']}\nBalance: \$${user['balance']}"),
-                      isThreeLine: true,
-                      trailing: Wrap(
-                        spacing: 8,
-                        children: [
-                          IconButton(
-                            icon: const Icon(Icons.add, color: Colors.green),
-                            onPressed: () => _showAmountDialog(
-                                email: user['email'], isAdd: true),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.remove, color: Colors.red),
-                            onPressed: () => _showAmountDialog(
-                                email: user['email'], isAdd: false),
-                          ),
-                          IconButton(
-                            icon: const Icon(Icons.receipt_long),
-                            onPressed: () => _showTransactions(user),
-                          ),
-                        ],
+          : Column(
+              children: [
+                Container(
+                  width: double.infinity,
+                  margin: const EdgeInsets.all(16),
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.shade700,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 6,
+                        spreadRadius: 2,
+                        offset: const Offset(0, 3),
                       ),
+                    ],
+                  ),
+                  child: Column(
+                    children: [
+                      const Text(
+                        "Total Balance",
+                        style: TextStyle(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white70,
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Text(
+                        "\$${totalBalance.toStringAsFixed(2)}",
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                ElevatedButton.icon(
+                  onPressed: _showAddUserDialog,
+                  icon: const Icon(Icons.person_add),
+                  label: const Text('Add User'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.blue,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(
+                        vertical: 12, horizontal: 24),
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Expanded(
+                  child: RefreshIndicator(
+                    onRefresh: _loadUsers,
+                    child: ListView.builder(
+                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                      itemCount: _users.length,
+                      itemBuilder: (ctx, index) {
+                        var user = _users[index];
+
+                        return Dismissible(
+                          key: Key(user['_id'].toString()), // Unique identifier
+                          direction: DismissDirection
+                              .endToStart, // Swipe left to delete
+                          background: Container(
+                            alignment: Alignment.centerRight,
+                            padding: const EdgeInsets.symmetric(horizontal: 20),
+                            color: Colors.red,
+                            child:
+                                const Icon(Icons.delete, color: Colors.white),
+                          ),
+                          confirmDismiss: (direction) async {
+                            return await _confirmDeleteUser(context, user);
+                          },
+                          onDismissed: (direction) async {
+                            await MongoService()
+                                .deleteUser(user['_id']); // Delete from DB
+                            setState(() {
+                              _users.removeAt(index); // Remove from UI
+                            });
+                          },
+                          child: Card(
+                            margin: const EdgeInsets.symmetric(
+                                vertical: 6, horizontal: 8),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            child: ListTile(
+                              contentPadding: const EdgeInsets.all(12),
+                              leading: CircleAvatar(
+                                backgroundColor: Colors.blue.shade600,
+                                child: Text(
+                                  user['name'][0].toUpperCase(),
+                                  style: const TextStyle(color: Colors.white),
+                                ),
+                              ),
+                              title: Text(user['name'] ?? '',
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold)),
+                              subtitle: Text(
+                                "Email: ${user['email']}\nBalance: \$${user['balance']}",
+                                style: TextStyle(color: Colors.grey.shade700),
+                              ),
+                              isThreeLine: true,
+                              trailing: Wrap(
+                                spacing: 8,
+                                children: [
+                                  IconButton(
+                                    icon: const Icon(Icons.add,
+                                        color: Colors.green),
+                                    onPressed: () => _showAmountDialog(
+                                        email: user['email'], isAdd: true),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.remove,
+                                        color: Colors.red),
+                                    onPressed: () => _showAmountDialog(
+                                        email: user['email'], isAdd: false),
+                                  ),
+                                  IconButton(
+                                    icon: const Icon(Icons.receipt_long),
+                                    onPressed: () => _showTransactions(user),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
+                  ),
+                ),
+              ],
             ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () =>
-            _showAddUserDialog(context), // Call the function to show dialog
-        child: const Icon(Icons.person_add),
-        tooltip: 'Add New User',
-      ),
     );
   }
 }

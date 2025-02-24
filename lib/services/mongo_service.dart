@@ -53,6 +53,15 @@ class MongoService {
     }); // Implement the logic to add a user to the database
   }
 
+  Future<void> deleteUser(ObjectId userId) async {
+    try {
+      await _users.deleteOne({"_id": userId});
+      print("User deleted successfully");
+    } catch (e) {
+      print("Error deleting user: $e");
+    }
+  }
+
   Future<void> resetPassword(String email, String newPassword) async {
     final collection = _db.collection('users');
 
