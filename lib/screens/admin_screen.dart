@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import '../services/mongo_service.dart';
 import '../screens/login_screen.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 
 class AdminScreen extends StatefulWidget {
   const AdminScreen({Key? key}) : super(key: key);
@@ -118,6 +120,58 @@ class _AdminScreenState extends State<AdminScreen> {
     );
   }
 
+  void _showAddUserDialog(BuildContext context) {
+    TextEditingController nameController = TextEditingController();
+    TextEditingController emailController = TextEditingController();
+    String selectedRole = 'user'; // Default role, but not shown in UI
+
+    showDialog(
+      context: context,
+      builder: (ctx) {
+        return AlertDialog(
+          title: const Text('Add New User'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextField(
+                controller: nameController,
+                decoration: const InputDecoration(hintText: "Enter name"),
+              ),
+              TextField(
+                controller: emailController,
+                decoration: const InputDecoration(hintText: "Enter email"),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () async {
+                String name = nameController.text.trim();
+                String email = emailController.text.trim();
+                if (name.isNotEmpty && email.isNotEmpty) {
+                  String password = '123456';
+                  String hashedPassword =
+                      sha256.convert(utf8.encode(password)).toString();
+
+                  await MongoService()
+                      .addUser(name, email, hashedPassword, selectedRole);
+
+                  Navigator.of(ctx).pop();
+                  _loadUsers();
+                }
+              },
+              child: const Text('Add'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.of(ctx).pop(),
+              child: const Text('Cancel'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -170,6 +224,12 @@ class _AdminScreenState extends State<AdminScreen> {
                 },
               ),
             ),
+      floatingActionButton: FloatingActionButton(
+        onPressed: () =>
+            _showAddUserDialog(context), // Call the function to show dialog
+        child: const Icon(Icons.person_add),
+        tooltip: 'Add New User',
+      ),
     );
   }
 }

@@ -41,6 +41,18 @@ class MongoService {
     });
   }
 
+  Future<void> addUser(
+      String name, String email, String hashedPassword, String role) async {
+    await _users.insertOne({
+      "name": name,
+      "email": email,
+      "password": hashedPassword,
+      "role": role,
+      "balance": 0,
+      "transactions": []
+    }); // Implement the logic to add a user to the database
+  }
+
   Future<void> resetPassword(String email, String newPassword) async {
     final collection = _db.collection('users');
 
