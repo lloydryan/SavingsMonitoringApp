@@ -94,14 +94,12 @@ class MongoService {
   }
 
   Future<void> addMoney(String email, double amount) async {
-    DateTime now = DateTime.now()
-        .add(const Duration(hours: 8)); // Convert to Philippine Time
     await _users.updateOne(
       where.eq('email', email),
       modify.inc('balance', amount).push('transactions', {
         "type": "deposit",
         "amount": amount,
-        "timestamp": now.toIso8601String(), // Store as UTC+8 manually
+        "timestamp": DateTime.now().toIso8601String()
       }),
     );
   }
@@ -109,14 +107,12 @@ class MongoService {
   Future<void> cashOut(String email, double amount) async {
     var user = await _users.findOne(where.eq('email', email));
     if (user != null && user['balance'] >= amount) {
-      DateTime now = DateTime.now()
-          .add(const Duration(hours: 8)); // Convert to Philippine Time
       await _users.updateOne(
         where.eq('email', email),
         modify.inc('balance', -amount).push('transactions', {
           "type": "withdraw",
           "amount": amount,
-          "timestamp": now.toIso8601String(), // Store as UTC+8 manually
+          "timestamp": DateTime.now().toIso8601String()
         }),
       );
     } else {
